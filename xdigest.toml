@@ -1,0 +1,13 @@
+# smallx の設定。ここを編集して push すると、次の実行から反映されます。
+# X API のトークンはここに書かず、GitHub の Settings → Secrets → Actions の X_BEARER_TOKEN に入れてください。
+
+# 読みたいXアカウント（@なしのユーザー名）。増やすほど X API の料金が増えます
+accounts = [
+  "hillbig",        # 岡野原大輔さん（綴りはXのプロフィールで確認してください）
+]
+
+site_title = "smallx"
+lookback_hours = 24          # 初回・新しく追加したアカウントは、何時間前までさかのぼるか
+max_posts_per_account = 40   # 1回あたりの上限（＝料金の上限）
+include_replies = false
+include_retweets = false
