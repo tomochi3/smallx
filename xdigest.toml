@@ -1,13 +1,19 @@
 # smallx の設定。ここを編集して push すると、次の実行から反映されます。
-# X API のトークンはここに書かず、GitHub の Settings → Secrets → Actions の X_BEARER_TOKEN に入れてください。
+# Cookie やトークンはここに書かず、GitHub の Settings → Secrets → Actions に入れてください（このファイルは公開されます）。
 
-# 読みたいXアカウント（@なしのユーザー名）。増やすほど X API の料金が増えます
+# 読みたいXアカウント（@なしのユーザー名）
 accounts = [
   "hillbig",        # 岡野原大輔さん（綴りはXのプロフィールで確認してください）
 ]
 
+# 取得方法
+#   "cookie": ブラウザでログイン中のXの Cookie を使う（無料・非公式。アカウント制限のリスクあり）
+#            → Secrets に X_COOKIES を登録
+#   "api"   : X 公式API（有料・従量課金）→ Secrets に X_BEARER_TOKEN を登録
+source = "cookie"
+
 site_title = "smallx"
 lookback_hours = 24          # 初回・新しく追加したアカウントは、何時間前までさかのぼるか
-max_posts_per_account = 40   # 1回あたりの上限（＝料金の上限）
+max_posts_per_account = 40   # 1回あたりに読む上限（api: 料金の上限 / cookie: アクセス量の上限）
 include_replies = false
 include_retweets = false

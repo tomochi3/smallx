@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from . import site
-from .config import Config, bearer_token
+from .config import Config, bearer_token, x_cookies
 from .xapi import XApiError, XClient
 
 POST_PRICE_USD = 0.005   # 他人の投稿1件あたりの目安（X API 従量課金）。正確な単価は developer console で確認
@@ -46,7 +46,12 @@ def run(cfg: Config, *, client: XClient | None = None, now: datetime | None = No
     """新しく追加した投稿数を返す。X API のエラーがあれば最後に SystemExit で失敗させる（Actions で気づけるように）。"""
     now = now or datetime.now(timezone.utc)
     state = load_state(cfg.state_file)
-    client = client or XClient(bearer_token())
+    if client is None:
+        if cfg.source == "api":
+            client = XClient(bearer_token())
+        else:
+            from .xcookie import CookieClient
+            client = CookieClient(x_cookies(), os.environ.get("X_ACCOUNT", "me"))
 
     ids: dict = state.setdefault("user_ids", {})
     missing = [a for a in cfg.accounts if a.lower() not in ids]
@@ -74,15 +79,16 @@ def run(cfg: Config, *, client: XClient | None = None, now: datetime | None = No
                                     now=now)
         except XApiError as e:
             errors.append(f"@{name}: {e}")
-            if e.status in (401, 402, 403, 429):
-                break   # 認証切れ・クレジット切れ・レート制限は他のアカウントでも同じなので止める
+            if e.status in (0, 401, 402, 403, 429):
+                break   # ログイン切れ・クレジット切れ・制限は他のアカウントでも同じなので止める
             continue
         print(f"@{name}: {len(got)}件")
         posts.extend(got)
         if got:
             since[name.lower()] = max(got, key=lambda p: int(p.id)).id
 
-    print(f"取得した投稿 {client.reads}件（概算 ${client.reads * POST_PRICE_USD:.3f}）")
+    cost = f"（概算 ${client.reads * POST_PRICE_USD:.3f}）" if cfg.source == "api" else ""
+    print(f"読んだ投稿 {client.reads}件{cost}")
     added = site.merge(cfg.root, posts)
     site.build(cfg.root, cfg.accounts, now=now, site_title=cfg.site_title)
     state["last_run"] = now.isoformat()

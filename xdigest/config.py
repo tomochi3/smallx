@@ -10,6 +10,7 @@ from pathlib import Path
 @dataclass
 class Config:
     accounts: list[str]
+    source: str = "cookie"                # cookie: ブラウザのCookie（無料・非公式） / api: X 公式API（有料）
     root: Path = Path(".")                # サイト（このリポジトリ）のルート
     site_title: str = "smallx"
     lookback_hours: int = 24
@@ -37,7 +38,17 @@ def load_config(path: Path | str = "xdigest.toml") -> Config:
     if not accounts:
         raise SystemExit("accounts に1つ以上のXアカウント（@なしのユーザー名）を書いてください。")
     kwargs["accounts"] = accounts
+    if kwargs.get("source", "cookie") not in ("cookie", "api"):
+        raise SystemExit('source は "cookie" か "api" にしてください。')
     return Config(**kwargs, root=path.parent)
+
+
+def x_cookies() -> str:
+    cookies = os.environ.get("X_COOKIES", "").strip()
+    if "auth_token=" not in cookies or "ct0=" not in cookies:
+        raise SystemExit("X_COOKIES がありません（または auth_token / ct0 が入っていません）。GitHub の Settings → "
+                         "Secrets and variables → Actions に X_COOKIES を「auth_token=...; ct0=...」の形で登録してください。")
+    return cookies
 
 
 def bearer_token() -> str:

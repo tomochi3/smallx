@@ -125,5 +125,90 @@ def test_config_requires_accounts_and_token(tmp_path, monkeypatch):
     cfg = make_cfg(tmp_path, '["@hillbig", " "]')
     assert cfg.accounts == ["hillbig"]
     monkeypatch.delenv("X_BEARER_TOKEN", raising=False)
-    with pytest.raises(SystemExit):
+    cfg.source = "api"
+    with pytest.raises(SystemExit, match="X_BEARER_TOKEN"):
+        pipeline.run(cfg, now=NOW)
+
+
+# ---- Cookie（twscrape）での取得 ----------------------------------------------
+
+from types import SimpleNamespace as NS
+
+from xdigest import xcookie
+
+
+def tw(id, text, *, user="hillbig", date="2026-11-06T10:00:00+00:00", links=(), photos=(), quoted=None,
+       retweeted=None, reply_to=None):
+    return NS(id=id, rawContent=text, user=NS(username=user), date=datetime.fromisoformat(date),
+              links=[NS(url=u, tcourl=t) for t, u in links], media=NS(photos=[NS(url=p) for p in photos],
+              videos=[], animated=[]), quotedTweet=quoted, retweetedTweet=retweeted,
+              inReplyToUser=NS(username=reply_to) if reply_to else None,
+              inReplyToTweetId=1 if reply_to else None, likeCount=5, retweetCount=1, replyCount=0, quoteCount=0)
+
+
+class FakeTwscrape:
+    def __init__(self, tweets):
+        self.tweets = tweets
+        self.limits = []
+
+    async def user_by_login(self, name):
+        return NS(id=42) if name == "hillbig" else None
+
+    async def user_tweets(self, uid, limit=-1):
+        self.limits.append(limit)
+        for t in self.tweets:
+            yield t
+
+
+def test_to_post_expands_links_and_strips_media_tco():
+    t = tw(300, "論文 https://t.co/aaa https://t.co/img", links=[("https://t.co/aaa", "https://arxiv.org/abs/1")],
+           photos=["https://pbs.twimg.com/media/x.jpg"], quoted=tw(5, "引用元", user="someone"))
+    p = xcookie.to_post(t)
+    assert p.text == "論文 https://arxiv.org/abs/1"
+    assert p.images == ["https://pbs.twimg.com/media/x.jpg"]
+    assert p.quoted.username == "someone" and p.url == "https://x.com/hillbig/status/300"
+
+
+def test_cookie_client_filters(monkeypatch):
+    async def no_pause():
+        return None
+    monkeypatch.setattr(xcookie.CookieClient, "_pause", staticmethod(no_pause))
+    tweets = [
+        tw(100, "固定ポスト（古い）", date="2026-10-01T00:00:00+00:00"),
+        tw(205, "新しい"),
+        tw(204, "RT", retweeted=tw(1, "x", user="other")),
+        tw(203, "他人への返信", reply_to="other"),
+        tw(202, "自分のスレッドの続き", reply_to="hillbig"),
+        tw(150, "前回取得済み"),
+    ]
+    fake = FakeTwscrape(tweets)
+    c = xcookie.CookieClient("auth_token=a; ct0=b", api=fake)
+    assert c.lookup_users(["hillbig", "nobody"]) == {"hillbig": "42"}
+    got = c.user_posts("42", "hillbig", since_id="150", lookback_hours=24, max_posts=40,
+                       include_replies=False, include_retweets=False, now=NOW)
+    assert [p.id for p in got] == ["205", "202"] and fake.limits == [40]
+    first = c.user_posts("42", "hillbig", since_id=None, lookback_hours=24, max_posts=40,
+                         include_replies=False, include_retweets=False, now=NOW)
+    assert "100" not in [p.id for p in first]   # 初回は lookback より古い固定ポストを除く
+
+
+def test_cookie_errors_become_xapi_errors(monkeypatch):
+    class Broken(FakeTwscrape):
+        async def user_tweets(self, uid, limit=-1):
+            raise RuntimeError("No account available")
+            yield
+    async def no_pause():
+        return None
+    monkeypatch.setattr(xcookie.CookieClient, "_pause", staticmethod(no_pause))
+    from xdigest.xapi import XApiError
+    c = xcookie.CookieClient("auth_token=a; ct0=b", api=Broken([]))
+    with pytest.raises(XApiError):
+        c.user_posts("42", "hillbig", since_id=None, lookback_hours=24, max_posts=40,
+                     include_replies=False, include_retweets=False, now=NOW)
+
+
+def test_missing_cookies_message(tmp_path, monkeypatch):
+    cfg = make_cfg(tmp_path)
+    monkeypatch.delenv("X_COOKIES", raising=False)
+    with pytest.raises(SystemExit, match="X_COOKIES"):
         pipeline.run(cfg, now=NOW)

@@ -23,8 +23,12 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Install
+        run: pip install -q -r requirements.txt
+
       - name: Fetch posts and rebuild pages
         env:
+          X_COOKIES: ${{ secrets.X_COOKIES }}
           X_BEARER_TOKEN: ${{ secrets.X_BEARER_TOKEN }}
           NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
           SITE_URL: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/
